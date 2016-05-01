@@ -18,6 +18,12 @@
 static struct TS3Functions ts3Functions;
 static char* pluginID = NULL;
 
+// The ID of the waiting room.
+uint64 waitingRoom = 3032;
+// Array of whitelisted channel IDs to poke from.
+#define WHITELIST_LENGTH 5
+uint64 whitelist[WHITELIST_LENGTH] = {3032, 3033, 3034, 3035, 3036};
+
 #define PLUGIN_API_VERSION 20
 #define MENU_ITEM_ID 1
 
@@ -35,7 +41,7 @@ const char* ts3plugin_name() {
 
 
 const char* ts3plugin_version() {
-	return "1.0";
+	return "1.1";
 }
 
 
@@ -110,39 +116,61 @@ static struct PluginMenuItem* createMenuItem(enum PluginMenuType type, int id, c
 
 void ts3plugin_initMenus(struct PluginMenuItem*** menuItems, char** menuIcon) {
 	BEGIN_CREATE_MENUS(1);
-	CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ITEM_ID, "Poke", NULL);
+	CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ITEM_ID, "Poke Channel", NULL);
 	END_CREATE_MENUS;
+}
+
+
+static int isInWhitelist(uint64 channelID)
+{
+	for (size_t i = 0; i < WHITELIST_LENGTH; i++) if (channelID == whitelist[i]) return 1;
+	return 0;
 }
 
 
 void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenuType type, int menuItemID, uint64 selectedItemID) {
 	if (type == PLUGIN_MENU_TYPE_CHANNEL && menuItemID == MENU_ITEM_ID)
 	{
-		anyID* clients;
-
-		if (ts3Functions.getChannelClientList(serverConnectionHandlerID, selectedItemID, &clients) == ERROR_ok)
+		if (selectedItemID == waitingRoom)
 		{
 			anyID selfID;
-
 			if (ts3Functions.getClientID(serverConnectionHandlerID, &selfID) == ERROR_ok)
 			{
-				unsigned int count = 0;
-
-				for (anyID* client = clients; *client != (anyID) NULL; client++)
+				uint64 currentChannel;
+				if (ts3Functions.getChannelOfClient(serverConnectionHandlerID, selfID, &currentChannel) == ERROR_ok)
 				{
-					if (*client != selfID)
+					if (isInWhitelist(currentChannel))
 					{
-						ts3Functions.requestClientPoke(serverConnectionHandlerID, *client, "New Mission!", "NewMissionPokeReturnCode");
-						count++;
+						anyID* clients;
+						if (ts3Functions.getChannelClientList(serverConnectionHandlerID, selectedItemID, &clients) == ERROR_ok)
+						{
+							unsigned int count = 0;
+							for (anyID* client = clients; *client != (anyID) NULL; client++)
+							{
+								if (*client != selfID)
+								{
+									//ts3Functions.requestClientPoke(serverConnectionHandlerID, *client, "New Mission!", "NewMissionPokeReturnCode");
+									count++;
+								}
+							}
+
+							char result[32];
+							sprintf(result, "Poked %u players.", count);
+
+							ts3Functions.printMessage(serverConnectionHandlerID, result, PLUGIN_MESSAGE_TARGET_CHANNEL);
+							ts3Functions.freeMemory(clients);
+						}
+					}
+					else
+					{
+						ts3Functions.printMessage(serverConnectionHandlerID, "You may only use this plugin while in one of the game channels!", PLUGIN_MESSAGE_TARGET_CHANNEL);
 					}
 				}
-
-				char result[32];
-				sprintf(result, "Poked %u players.", count);
-
-				ts3Functions.printMessage(serverConnectionHandlerID, result, PLUGIN_MESSAGE_TARGET_CHANNEL);
-				ts3Functions.freeMemory(clients);
 			}
+		}
+		else
+		{
+			ts3Functions.printMessage(serverConnectionHandlerID, "You may only use this plugin on the Waiting Room!", PLUGIN_MESSAGE_TARGET_CHANNEL);
 		}
 	}
 }
